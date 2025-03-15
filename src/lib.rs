@@ -80,7 +80,6 @@ pub use elements::*;
 pub use error::{BlobError, Error, ErrorKind, Result};
 pub use indexed::*;
 pub use mmap_blob::*;
-pub use reader::*;
 
 pub mod blob;
 pub mod block;
@@ -89,8 +88,19 @@ pub mod elements;
 mod error;
 pub mod indexed;
 pub mod mmap_blob;
-pub mod reader;
 
 mod proto {
-    include!(concat!(env!("OUT_DIR"), "/mod.rs"));
+    mod raw {
+        include!(concat!(env!("OUT_DIR"), "/osmpbf.rs"));
+    }
+
+    pub mod fileformat {
+        pub use super::raw::{blob::Data, Blob, BlobHeader};
+    }
+
+    pub(crate) mod osmformat {
+        pub use super::raw::{
+            relation, HeaderBlock, Info, Node, PrimitiveBlock, PrimitiveGroup, Relation, Way,
+        };
+    }
 }

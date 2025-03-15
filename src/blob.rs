@@ -2,11 +2,10 @@
 
 use crate::block::{HeaderBlock, PrimitiveBlock};
 use crate::error::{new_blob_error, new_error, new_protobuf_error, BlobError, ErrorKind, Result};
-use crate::proto::fileformat;
+use crate::proto::fileformat::{self, Data};
 use byteorder::ReadBytesExt;
-use protobuf::Message;
 use std::fs::File;
-use std::io::{BufReader, Read, Seek, SeekFrom};
+use std::io::{BufReader, Cursor, Read, Seek, SeekFrom};
 use std::path::Path;
 
 use flate2::read::ZlibDecoder;
@@ -98,7 +97,7 @@ impl Blob {
 
     /// Returns the type of a blob without decoding its content.
     pub fn get_type(&self) -> BlobType {
-        match self.header.type_() {
+        match &self.header.r#type {
             x if x == BlobType::OsmHeader.as_str() => BlobType::OsmHeader,
             x if x == BlobType::OsmData.as_str() => BlobType::OsmData,
             x => BlobType::Unknown(x),
@@ -139,7 +138,7 @@ impl BlobHeader {
 
     /// Returns the type of the following blob.
     pub fn blob_type(&self) -> BlobType {
-        match self.header.type_() {
+        match self.header.r#type.as_str() {
             "OSMHeader" => BlobType::OsmHeader,
             "OSMData" => BlobType::OsmData,
             x => BlobType::Unknown(x),
@@ -148,7 +147,7 @@ impl BlobHeader {
 
     /// Returns the size of the following blob in bytes.
     pub fn get_blob_size(&self) -> i32 {
-        self.header.datasize()
+        self.header.datasize
     }
 }
 
@@ -419,7 +418,7 @@ impl<R: Read + Seek + Send> BlobReader<R> {
         };
 
         // skip blob (which also adjusts self.offset)
-        if let Err(err) = self.seek_raw(SeekFrom::Current(header.datasize() as i64)) {
+        if let Err(err) = self.seek_raw(SeekFrom::Current(header.datasize as i64)) {
             self.last_blob_ok = false;
             return Some(Err(err));
         }
@@ -452,19 +451,24 @@ impl BlobReader<BufReader<File>> {
     }
 }
 
-pub(crate) fn decode_blob<T: Message>(blob: &fileformat::Blob) -> Result<T> {
-    if blob.has_raw() {
-        let size = blob.raw().len() as u64;
-        if size < MAX_BLOB_MESSAGE_SIZE {
-            T::parse_from_bytes(blob.raw()).map_err(|e| new_protobuf_error(e, "raw blob data"))
-        } else {
-            Err(new_blob_error(BlobError::MessageTooBig { size }))
+pub(crate) fn decode_blob<T: prost::Message + Default>(blob: &fileformat::Blob) -> Result<T> {
+    match blob.data {
+        Some(Data::Raw(raw)) => {
+            let size = raw.len() as u64;
+            if size < MAX_BLOB_MESSAGE_SIZE {
+                T::decode(raw.as_slice()).map_err(|e| new_protobuf_error(e, "raw blob data"))
+            } else {
+                Err(new_blob_error(BlobError::MessageTooBig { size }))
+            }
         }
-    } else if blob.has_zlib_data() {
-        let mut decoder = ZlibDecoder::new(blob.zlib_data()).take(MAX_BLOB_MESSAGE_SIZE);
-        T::parse_from_reader(&mut decoder).map_err(|e| new_protobuf_error(e, "blob zlib data"))
-    } else {
-        Err(new_blob_error(BlobError::Empty))
+        Some(Data::ZlibData(data)) => {
+            let mut decoder = ZlibDecoder::new(Cursor::new(data)).take(MAX_BLOB_MESSAGE_SIZE);
+            let mut out_buf = Vec::new();
+
+            decoder.read_to_end(&mut out_buf)?;
+            T::decode(out_buf.as_slice()).map_err(|e| new_protobuf_error(e, "blob zlib data"))
+        }
+        _ => Err(new_blob_error(BlobError::Empty)),
     }
 }
 
@@ -482,9 +486,11 @@ mod tests {
         ];
 
         for (string, blob_type) in &pairs {
-            let mut ff_header = fileformat::BlobHeader::new();
-            ff_header.set_type(string.to_string());
-            let ff_blob = fileformat::Blob::new();
+            let ff_blob = fileformat::Blob::default();
+            let ff_header = fileformat::BlobHeader {
+                r#type: string.to_string(),
+                ..Default::default()
+            };
 
             let blob = Blob::new(ff_header, ff_blob, None);
             assert_eq!(blob.get_type(), *blob_type);

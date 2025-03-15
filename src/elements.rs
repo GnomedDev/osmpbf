@@ -8,6 +8,15 @@ use crate::proto::osmformat::PrimitiveBlock;
 use osmformat::relation::MemberType;
 use protobuf::EnumOrUnknown;
 
+static DEFAULT_INFO: osmformat::Info = osmformat::Info {
+    version: None,
+    timestamp: None,
+    changeset: None,
+    uid: None,
+    user_sid: None,
+    visible: None,
+};
+
 /// An enum with the OSM core elements: nodes, ways and relations.
 #[derive(Clone, Debug)]
 pub enum Element<'a> {
@@ -41,7 +50,7 @@ impl<'a> Node<'a> {
     /// Returns the node id. It should be unique between nodes and might be negative to indicate
     /// that the element has not yet been uploaded to a server.
     pub fn id(&self) -> i64 {
-        self.osmnode.id()
+        self.osmnode.id
     }
 
     /// Returns an iterator over the tags of this node
@@ -77,7 +86,10 @@ impl<'a> Node<'a> {
 
     /// Returns additional metadata for this element.
     pub fn info(&self) -> Info<'a> {
-        Info::new(self.block, self.osmnode.info.get_or_default())
+        Info::new(
+            self.block,
+            self.osmnode.info.as_ref().unwrap_or(&DEFAULT_INFO),
+        )
     }
 
     /// Returns the latitude coordinate in degrees.
@@ -87,7 +99,7 @@ impl<'a> Node<'a> {
 
     /// Returns the latitude coordinate in nanodegrees (10⁻⁹).
     pub fn nano_lat(&self) -> i64 {
-        self.block.lat_offset() + i64::from(self.block.granularity()) * self.osmnode.lat()
+        self.block.lat_offset() + i64::from(self.block.granularity()) * self.osmnode.lat
     }
 
     /// Returns the latitude coordinate in decimicrodegrees (10⁻⁷).
@@ -102,7 +114,7 @@ impl<'a> Node<'a> {
 
     /// Returns the longitude in nanodegrees (10⁻⁹).
     pub fn nano_lon(&self) -> i64 {
-        self.block.lon_offset() + i64::from(self.block.granularity()) * self.osmnode.lon()
+        self.block.lon_offset() + i64::from(self.block.granularity()) * self.osmnode.lon
     }
 
     /// Returns the longitude coordinate in decimicrodegrees (10⁻⁷).
@@ -147,7 +159,7 @@ impl<'a> Way<'a> {
 
     /// Returns the way id.
     pub fn id(&self) -> i64 {
-        self.osmway.id()
+        self.osmway.id
     }
 
     /// Returns an iterator over the tags of this way
@@ -183,7 +195,10 @@ impl<'a> Way<'a> {
 
     /// Returns additional metadata for this element.
     pub fn info(&self) -> Info<'a> {
-        Info::new(self.block, self.osmway.info.get_or_default())
+        Info::new(
+            self.block,
+            self.osmway.info.as_ref().unwrap_or(&DEFAULT_INFO),
+        )
     }
 
     /// Returns an iterator over the references of this way. Each reference should correspond to a
@@ -256,7 +271,7 @@ impl<'a> Relation<'a> {
 
     /// Returns the relation id.
     pub fn id(&self) -> i64 {
-        self.osmrel.id()
+        self.osmrel.id
     }
 
     /// Returns an iterator over the tags of this relation
@@ -292,7 +307,10 @@ impl<'a> Relation<'a> {
 
     /// Returns additional metadata for this element.
     pub fn info(&self) -> Info<'a> {
-        Info::new(self.block, self.osmrel.info.get_or_default())
+        Info::new(
+            self.block,
+            self.osmrel.info.as_ref().unwrap_or(&DEFAULT_INFO),
+        )
     }
 
     /// Returns an iterator over the members of this relation.
@@ -582,8 +600,8 @@ impl<'a> Info<'a> {
 
     /// Returns the time stamp in milliseconds since the epoch.
     pub fn milli_timestamp(&self) -> Option<i64> {
-        if self.info.has_timestamp() {
-            Some(self.info.timestamp() * i64::from(self.block.date_granularity()))
+        if let Some(timestamp) = self.info.timestamp {
+            Some(timestamp * i64::from(self.block.date_granularity()))
         } else {
             None
         }
@@ -601,11 +619,8 @@ impl<'a> Info<'a> {
 
     /// Returns the user name.
     pub fn user(&self) -> Option<Result<&'a str>> {
-        if self.info.has_user_sid() {
-            Some(str_from_stringtable(
-                self.block,
-                self.info.user_sid() as usize,
-            ))
+        if let Some(user_sid) = self.info.user_sid {
+            Some(str_from_stringtable(self.block, user_sid as usize))
         } else {
             None
         }

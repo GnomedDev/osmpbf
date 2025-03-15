@@ -7,7 +7,6 @@ use crate::error::{new_blob_error, new_protobuf_error, BlobError, Result};
 use crate::proto::{fileformat, osmformat};
 use crate::MAX_BLOB_HEADER_SIZE;
 use byteorder::ByteOrder;
-use protobuf::Message;
 use std::fs::File;
 use std::path::Path;
 
@@ -88,7 +87,7 @@ impl<'a> MmapBlob<'a> {
     /// Decodes the blob and tries to obtain the inner content (usually a [`HeaderBlock`] or a
     /// [`PrimitiveBlock`]). This operation might involve an expensive decompression step.
     pub fn decode(&'a self) -> Result<BlobDecode<'a>> {
-        let blob = fileformat::Blob::parse_from_bytes(self.data)
+        let blob = fileformat::Blob::decode(&self.data)
             .map_err(|e| new_protobuf_error(e, "blob content"))?;
         match self.header.type_() {
             "OSMHeader" => {
